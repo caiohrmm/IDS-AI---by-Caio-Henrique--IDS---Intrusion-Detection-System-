@@ -2,6 +2,12 @@
 
 ## Detector de Intrusão por Fluxo (Python + XGBoost) e API (Node.js/Express)
 
+⚡ Novo: Insights por IA (Gemini)
+
+- A interface agora gera “Insights (IA)” com base nos resultados de análise, usando a API do Google Gemini.
+- Foco em baixo custo: usa o modelo `gemini-1.5-flash` por padrão e respostas curtas (máx. ~6 bullets).
+- Se a IA não estiver configurada, o frontend exibe insights padrão (fallback) sem interromper o fluxo.
+
 
 
 ### O que é
@@ -60,6 +66,18 @@ npm install
 node server.js
 ```
 A API escutará em `http://localhost:3000` (CORS liberado).
+
+### Variáveis de ambiente (Insights por IA)
+Para ativar os insights por IA (Gemini), crie um arquivo `.env` na raiz com:
+
+```
+GEMINI_API_KEY=SEU_TOKEN
+GEMINI_MODEL=gemini-1.5-flash
+```
+
+Observações:
+- Recomenda-se `gemini-1.5-flash` para reduzir custo de tokens.
+- Sem `GEMINI_API_KEY`, o frontend usa os insights padrão (sem IA).
 
 ## Interface Web (Frontend)
 - Acesse `http://localhost:3000/` no navegador com a API em execução.

@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -21,6 +22,14 @@ if (fs.existsSync(publicDir)) {
 
 const predictRouter = require('./routes/predict');
 app.use('/predict', predictRouter);
+
+// AI Insights (Gemini)
+try {
+  const insightsRouter = require('./routes/insights');
+  app.use('/insights', insightsRouter);
+} catch (e) {
+  console.warn('Rota /insights não carregada:', e && e.message);
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

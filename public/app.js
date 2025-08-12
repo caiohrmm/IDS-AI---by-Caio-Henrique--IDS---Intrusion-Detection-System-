@@ -44,7 +44,7 @@ function renderError(message, details) {
   show(errorEl);
 }
 
-function renderResult(data) {
+async function renderResult(data) {
   const parsed = data.parsed || {};
   const lines = (parsed.raw || []).map(l => `<code>${l}</code>`).join('<br/>');
   const maliciousPercent = parsed.maliciousPercent != null ? parsed.maliciousPercent : (parsed.malicious && parsed.benign ? (parsed.malicious / (parsed.malicious + parsed.benign)) * 100 : null);
@@ -119,7 +119,7 @@ function renderResult(data) {
     });
   }
 
-  // Insights section
+  // Insights section (fallback)
   const tips = [];
   const hasCounts = typeof parsed.benign === 'number' && typeof parsed.malicious === 'number';
   const totalFlows = (typeof parsed.flowsAnalyzed === 'number') ? parsed.flowsAnalyzed : ((parsed.benign || 0) + (parsed.malicious || 0));
@@ -156,15 +156,48 @@ function renderResult(data) {
     </div>
   `;
 
+  // Render base insights immediately
   insightsEl.innerHTML = `
     <h3>Insights</h3>
     <p>Leitura rápida dos resultados, limitações e próximos passos práticos para investigação.</p>
     ${statsHtml}
-    <div class="tips">
+    <div class="tips" id="tips-fallback">
       ${tips.map(t => `<div class="tip">${t}</div>`).join('')}
     </div>
   `;
   show(insightsEl);
+
+  // Try AI-enhanced insights via backend (/insights) if available
+  try {
+    const aiRes = await fetch('/insights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parsed, file: data.file || '-' })
+    });
+    if (aiRes.ok) {
+      const aiJson = await aiRes.json();
+      if (aiJson && aiJson.success && aiJson.insights) {
+        const aiText = aiJson.insights;
+        const bullets = aiText
+          .split(/\r?\n/)
+          .map(l => l.trim())
+          .filter(Boolean)
+          .map(l => l.replace(/^[-*]\s*/, ''));
+        const aiHtml = bullets.map(b => `<div class="tip">${b}</div>`).join('');
+        const tipsContainer = document.getElementById('tips-fallback');
+        if (tipsContainer) {
+          tipsContainer.innerHTML = aiHtml;
+        }
+        // Add a small label to indicate AI origin
+        const titleEl = insightsEl.querySelector('h3');
+        if (titleEl) {
+          titleEl.innerHTML = 'Insights (IA)';
+        }
+      }
+    }
+  } catch (_) {
+    // Silently keep fallback tips
+  }
 }
 
 form.addEventListener('submit', async (e) => {
