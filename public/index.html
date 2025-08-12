@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IDS AI — Detector de Intrusão</title>
+    <title>IDS AI — Detecção de Ameaças em Fluxos de Rede</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="header">
       <div class="container">
-        <h1>IDS AI — Detector de Intrusão</h1>
-        <p>Envie um arquivo .pcap/.pcapng ou CSV de fluxos para análise</p>
+        <h1>IDS AI — Detecção de Ameaças em Fluxos de Rede</h1>
+        <p>Sistema educativo que classifica fluxos de rede como BENIGN ou MALICIOUS usando modelo treinado nos datasets públicos UNSW-NB15 e CIC-IDS2017. Envie um .pcap/.pcapng ou CSV para estimar a proporção de tráfego malicioso. Compatível com CSVs de fluxo no padrão CICFlowMeter (CIC-IDS2017) e UNSW-NB15.</p>
       </div>
     </header>
 
@@ -51,13 +51,37 @@
         <div id="error" class="error hidden"></div>
       </section>
 
+      <section class="card">
+        <h2>O que é este sistema</h2>
+        <p>
+          Uma demonstração de <em>Intrusion Detection</em> por fluxo. O backend executa um
+          modelo de Machine Learning treinado com features do CICFlowMeter sobre os datasets UNSW-NB15 e CIC-IDS2017
+          para estimar se os fluxos enviados são benignos ou maliciosos e sumariza a distribuição.
+          É voltado para estudo, prototipagem e homelab.
+        </p>
+        <p style="color: var(--text-dim)">
+          Limitação: a inferência foi validada com dados de fluxo compatíveis com <strong>CICFlowMeter (CIC-IDS2017)</strong> e mapeamento de colunas do <strong>UNSW-NB15</strong>.
+          Outros formatos podem exigir adequação de features e <strong>re-treino</strong> para resultados confiáveis.
+        </p>
+      </section>
+
       <section class="help card">
         <h2>Como funciona</h2>
-        <ul>
-          <li>O arquivo é enviado para a API em <code>POST /predict</code>.</li>
-          <li>A API executa <code>predict.py</code> com o modelo <code>intrusion_model.joblib</code>.</li>
-          <li>Você verá o total de fluxos, contagens BENIGN/MALICIOUS e o percentual de tráfego malicioso.</li>
-        </ul>
+        <ol>
+          <li>Você envia um <strong>.pcap/.pcapng</strong> ou <strong>.csv</strong> via <code>POST /predict</code>.</li>
+          <li>Se for PCAP, o servidor usa o <code>CICFlowMeter</code> para extrair features de fluxo.</li>
+          <li>O script <code>predict.py</code> carrega o modelo <code>intrusion_model.joblib</code> e aplica o mesmo pré-processamento do treino.</li>
+          <li>Cada fluxo é classificado como <code>BENIGN</code> ou <code>MALICIOUS</code>.</li>
+          <li>As contagens são agregadas e exibidas: total de fluxos, BENIGN, MALICIOUS e <strong>% malicioso</strong>.</li>
+          <li>Um gráfico donut resume a distribuição e a seção de insights sugere próximos passos.</li>
+        </ol>
+        <p style="color: var(--text-dim)">
+          Compatibilidade: use CSVs gerados pelo <code>CICFlowMeter</code> (CIC-IDS2017) ou o esquema do <code>UNSW-NB15</code>. PCAPs enviados são convertidos pelo CICFlowMeter
+          para o mesmo conjunto de features antes da predição. Outros datasets podem falhar por incompatibilidade de colunas.
+        </p>
+        <p style="color: var(--text-dim)">
+          Privacidade: o arquivo enviado é <strong>apagado</strong> do servidor após o processamento. Resultados dependem do domínio, das colunas disponíveis e da qualidade da captura.
+        </p>
       </section>
     </main>
 

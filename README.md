@@ -5,7 +5,7 @@
 
 
 ### O que é
-Este projeto implementa um classificador de tráfego de rede (por fluxo) treinado sobre features extraídas pelo CICFlowMeter (baseado no dataset CIC-IDS2017). O objetivo é classificar cada fluxo como BENIGN ou MALICIOUS e fornecer um resumo do percentual de tráfego malicioso.
+Este projeto implementa um classificador de tráfego de rede (por fluxo) treinado sobre features extraídas pelo CICFlowMeter (baseado no dataset CIC-IDS2017 e UNSW-NB15). O objetivo é classificar cada fluxo como BENIGN ou MALICIOUS e fornecer um resumo do percentual de tráfego malicioso.
 
 Agora o projeto também inclui uma interface web (frontend) servida pela própria API, com upload via drag & drop, barra de progresso com velocidade/ETA, botão de cancelar, exibição de métricas, gráfico do tipo donut (BENIGN vs MALICIOUS) e uma seção de insights didáticos.
 
@@ -76,6 +76,8 @@ Observações:
 - O frontend usa Chart.js via CDN. Se estiver sem internet, o gráfico pode não carregar; o restante da página funciona normalmente.
 - Limite de upload: 1GB.
 - Extensões aceitas: `.pcap`, `.pcapng`, `.pcap_ISCX`, `.pcap_ISCX.csv`, `.csv`.
+
+Compatibilidade de dados: a inferência foi validada com CSVs de fluxo no padrão do **CICFlowMeter (CIC-IDS2017)** e com mapeamento de colunas do **UNSW-NB15**. Enviar outros formatos/colunas não suportados pode causar erros ou deteriorar a qualidade dos resultados. Para novos esquemas de features, ajuste o pré-processamento e considere **re-treinar** o modelo.
 
 ## Endpoint
 ### POST `/predict`

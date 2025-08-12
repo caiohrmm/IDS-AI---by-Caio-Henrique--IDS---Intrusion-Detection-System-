@@ -121,21 +121,32 @@ function renderResult(data) {
 
   // Insights section
   const tips = [];
+  const hasCounts = typeof parsed.benign === 'number' && typeof parsed.malicious === 'number';
+  const totalFlows = (typeof parsed.flowsAnalyzed === 'number') ? parsed.flowsAnalyzed : ((parsed.benign || 0) + (parsed.malicious || 0));
+  const benignPercent = hasCounts && totalFlows > 0 ? (parsed.benign / (parsed.benign + parsed.malicious)) * 100 : null;
   if (maliciousPercent != null) {
     if (maliciousPercent === 0) {
-      tips.push('Nenhum tráfego malicioso detectado. Continue monitorando regularmente.');
+      tips.push('Nenhum tráfego malicioso detectado. Verifique janelas de tempo diferentes para reduzir viés de amostragem.');
     } else if (maliciousPercent < 1) {
-      tips.push('Baixo percentual malicioso. Verifique hosts com maior volume para garantir ausência de falsos positivos.');
+      tips.push('Baixo percentual malicioso. Priorize hosts/top talkers para varreduras rápidas e revisão de regras.');
     } else if (maliciousPercent < 5) {
-      tips.push('Atenção: percentual moderado de tráfego malicioso. Considere isolar fluxos suspeitos para inspeção.');
+      tips.push('Atenção: percentual moderado. Considere isolamento temporário de fluxos suspeitos e coleta de PCAP para deep-dive.');
     } else {
-      tips.push('ALERTA: percentual alto de tráfego malicioso. Aplique contenção (bloqueio ACL/Firewall) e investigue IOC imediatamente.');
+      tips.push('ALERTA: percentual alto. Avalie contenção (ACL/Firewall), hunting por IOCs e verificação de lateral movement.');
     }
   }
-  tips.push('Garanta que o modelo e as features correspondem ao ambiente atual (versões e colunas).');
-  tips.push('Para arquivos PCAP, verifique se o CICFlowMeter está instalado e funcionando (PATH).');
+  tips.push('Valide se as features/colunas do CSV correspondem ao esperado pelo modelo (nomes e tipos).');
+  tips.push('Para PCAPs, confirme o funcionamento do CICFlowMeter (instalação e PATH).');
+  if (hasCounts && benignPercent != null && benignPercent > 95) {
+    tips.push('Distribuição altamente benigna: útil para estabelecer baseline e identificar desvios futuros.');
+  }
+  if (hasCounts && maliciousPercent != null && maliciousPercent >= 1 && maliciousPercent < 5) {
+    tips.push('Sugestão: gere amostras rotuladas para retroalimentar o treino e reduzir falsos positivos.');
+  }
+  if (hasCounts && maliciousPercent != null && maliciousPercent >= 5) {
+    tips.push('Considere segmentar a rede/ACLs por sub-redes mais ativas e aplicar inspeção reforçada.');
+  }
 
-  const totalFlows = (typeof parsed.flowsAnalyzed === 'number') ? parsed.flowsAnalyzed : ((parsed.benign || 0) + (parsed.malicious || 0));
   const statsHtml = `
     <div class="stats-grid">
       <div class="stat"><span class="label">Fluxos analisados</span><span class="value">${totalFlows.toLocaleString()}</span></div>
@@ -147,7 +158,7 @@ function renderResult(data) {
 
   insightsEl.innerHTML = `
     <h3>Insights</h3>
-    <p>Interpretação rápida dos resultados e próximos passos sugeridos.</p>
+    <p>Leitura rápida dos resultados, limitações e próximos passos práticos para investigação.</p>
     ${statsHtml}
     <div class="tips">
       ${tips.map(t => `<div class="tip">${t}</div>`).join('')}
@@ -322,5 +333,6 @@ fileInput.addEventListener('change', () => {
     hide(fileInfo);
   }
 });
+
 
 
