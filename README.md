@@ -7,6 +7,8 @@
 ### O que é
 Este projeto implementa um classificador de tráfego de rede (por fluxo) treinado sobre features extraídas pelo CICFlowMeter (baseado no dataset CIC-IDS2017). O objetivo é classificar cada fluxo como BENIGN ou MALICIOUS e fornecer um resumo do percentual de tráfego malicioso.
 
+Agora o projeto também inclui uma interface web (frontend) servida pela própria API, com upload via drag & drop, barra de progresso com velocidade/ETA, botão de cancelar, exibição de métricas, gráfico do tipo donut (BENIGN vs MALICIOUS) e uma seção de insights didáticos.
+
 ### Para que serve
 - Você envia um arquivo `.pcap`, `.pcapng` ou um CSV de fluxos (`.pcap_ISCX.csv`/`.csv`) para a API.
 - A API chama o script Python `predict.py`, que aplica o modelo `intrusion_model.joblib` e retorna:
@@ -17,9 +19,13 @@ Este projeto implementa um classificador de tráfego de rede (por fluxo) treinad
 ### Principais componentes
 - `train.py` (Python): treino do modelo (SMOTE + XGBoost) e avaliação.
 - `predict.py` (Python): predição por fluxo com o modelo salvo (`intrusion_model.joblib`).
-- `server.js` (Node.js / Express): servidor HTTP.
+- `server.js` (Node.js / Express): servidor HTTP e servidor de arquivos estáticos do frontend.
 - `routes/predict.js`: endpoint `POST /predict` com upload via `multer`.
 - `utils/runPython.js`: executa o `predict.py` e faz parse da saída.
+- `public/` (frontend):
+  - `index.html`
+  - `app.js`
+  - `styles.css`
 
 ## Datasets de teste e Modelo pré-treinado
 Baixe os arquivos (datasets de teste e `intrusion_model.joblib`) no Google Drive e coloque o arquivo do modelo na raiz do projeto.
@@ -54,6 +60,22 @@ npm install
 node server.js
 ```
 A API escutará em `http://localhost:3000` (CORS liberado).
+
+## Interface Web (Frontend)
+- Acesse `http://localhost:3000/` no navegador com a API em execução.
+- Arraste e solte um arquivo (ou clique para selecionar), depois clique em “Analisar”.
+- O frontend exibe:
+  - Progresso real de upload (porcentagem, velocidade, ETA, tempo decorrido) e botão “Cancelar”.
+  - Status de envio e processamento no servidor.
+  - Métricas: total de fluxos, contagens BENIGN/MALICIOUS e percentual malicioso.
+  - Gráfico donut (Chart.js) com a distribuição BENIGN vs MALICIOUS.
+  - Insights com recomendações e as estatísticas agregadas (arquivo, fluxos, etc.).
+- Em caso de erro, a UI mostra a mensagem e, quando disponível, detalhes técnicos do Python (stderr/stdout) para depuração.
+
+Observações:
+- O frontend usa Chart.js via CDN. Se estiver sem internet, o gráfico pode não carregar; o restante da página funciona normalmente.
+- Limite de upload: 1GB.
+- Extensões aceitas: `.pcap`, `.pcapng`, `.pcap_ISCX`, `.pcap_ISCX.csv`, `.csv`.
 
 ## Endpoint
 ### POST `/predict`
@@ -93,6 +115,11 @@ Exemplo de resposta:
 - Se `Python não encontrado`: adicione `python` ao PATH (em Windows, o `py` também é suportado).
 - Se erro de upload: confirme que o campo do formulário é `file` e o arquivo tem extensão aceita.
 
+### Notas sobre o modelo e datasets
+- O modelo (`intrusion_model.joblib`) deve estar na raiz do projeto para que a API e o frontend funcionem.
+- O `train.py` aceita CSVs do CIC-IDS2017 e também do UNSW-NB15 (inclui normalização de rótulos e leitura robusta).
+- Para treinos grandes, use `--no-smote` e `--max-samples` para controlar memória e tempo.
+
 ## Treino do modelo (opcional)
 Caso queira (re)treinar o modelo localmente:
 ```bash
@@ -116,3 +143,7 @@ python train.py --data-dir "." --features-dir "features" --model-path "intrusion
 - `package.json`
 - `README.md`
 - `.gitignore` 
+- `public/`
+  - `index.html`
+  - `app.js`
+  - `styles.css`
