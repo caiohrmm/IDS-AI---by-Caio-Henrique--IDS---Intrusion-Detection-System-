@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IDS AI — Detector de Intrusão</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="container">
+        <h1>IDS AI — Detector de Intrusão</h1>
+        <p>Envie um arquivo .pcap/.pcapng ou CSV de fluxos para análise</p>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <form id="upload-form">
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="file-input" name="file" accept=".pcap,.pcapng,.pcap_ISCX,.pcap_ISCX.csv,.csv,.PCAP,.PCAPNG,.PCAP_ISCX,.PCAP_ISCX.csv,.CSV" />
+            <p id="dropzone-label">Arraste e solte seu arquivo aqui ou clique para selecionar</p>
+            <small>Extensões aceitas: .pcap, .pcapng, .pcap_ISCX, .pcap_ISCX.csv, .csv (até 1GB)</small>
+            <div id="file-info" class="file-info hidden"></div>
+          </div>
+
+          <div class="actions">
+            <button type="submit" id="submit-btn">Analisar</button>
+            <button type="button" id="cancel-btn" class="btn-secondary hidden">Cancelar</button>
+          </div>
+        </form>
+
+        <div id="status" class="status hidden" aria-live="polite"></div>
+        <div id="progress" class="progress hidden">
+          <div class="bar"><span class="fill" id="progress-fill" style="width:0%"></span></div>
+          <div class="progress-meta">
+            <span id="progress-percent">0%</span>
+            <span id="progress-speed">0 MB/s</span>
+            <span id="progress-eta">ETA —</span>
+            <span id="progress-elapsed">Tempo: 0s</span>
+          </div>
+        </div>
+
+        <div id="results-wrap" class="results-wrap hidden">
+          <div id="result" class="result-card"></div>
+          <div id="chart-area" class="chart-card">
+            <canvas id="dist-chart" height="140"></canvas>
+          </div>
+        </div>
+        <div id="insights" class="card hidden"></div>
+        <div id="error" class="error hidden"></div>
+      </section>
+
+      <section class="help card">
+        <h2>Como funciona</h2>
+        <ul>
+          <li>O arquivo é enviado para a API em <code>POST /predict</code>.</li>
+          <li>A API executa <code>predict.py</code> com o modelo <code>intrusion_model.joblib</code>.</li>
+          <li>Você verá o total de fluxos, contagens BENIGN/MALICIOUS e o percentual de tráfego malicioso.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">
+        <small>© IDS AI — por Caio Henrique</small>
+      </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/app.js"></script>
+  </body>
+  </html>
+
+

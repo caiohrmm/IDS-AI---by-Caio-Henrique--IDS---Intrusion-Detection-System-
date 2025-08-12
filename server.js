@@ -13,6 +13,12 @@ const app = express();
 app.use(cors()); // Allow all origins
 app.use(express.json());
 
+// Serve static frontend if available
+const publicDir = path.resolve(__dirname, 'public');
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+}
+
 const predictRouter = require('./routes/predict');
 app.use('/predict', predictRouter);
 

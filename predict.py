@@ -17,6 +17,70 @@ def _replace_inf_with_nan(X):
     return X
 
 
+def _to_string_2d(X):
+    """Mirror of training-time helper: convert categorical features to strings.
+    Present here to allow unpickling of FunctionTransformer referencing this.
+    """
+    if isinstance(X, pd.DataFrame):
+        return X.astype("object").astype(str).fillna("")
+    arr = np.asarray(X, dtype=object)
+    def conv(v):
+        if v is None:
+            return ""
+        try:
+            if isinstance(v, float) and np.isnan(v):
+                return ""
+        except Exception:
+            pass
+        return str(v)
+    vec = np.vectorize(conv, otypes=[str])
+    return vec(arr)
+
+
+def _to_numeric_2d(X):
+    """Mirror of training-time helper: convert numeric-like features to floats.
+    Present here to allow unpickling of FunctionTransformer referencing this.
+    """
+    if isinstance(X, pd.DataFrame):
+        return X.apply(pd.to_numeric, errors="coerce")
+    df = pd.DataFrame(X)
+    df = df.apply(pd.to_numeric, errors="coerce")
+    return df.values
+
+
+def read_flows_csv(csv_path: Path) -> pd.DataFrame:
+    """Robust CSV reader for prediction.
+
+    - Tries UTF-8 then Latin-1
+    - If UNSW headerless, re-read with official UNSW columns
+    """
+    read_kwargs = dict(low_memory=False)
+    try:
+        df = pd.read_csv(csv_path, **read_kwargs)
+    except UnicodeDecodeError:
+        df = pd.read_csv(csv_path, encoding="latin1", **read_kwargs)
+
+    lower_name = csv_path.name.lower()
+    unsw_like = ("unsw" in lower_name and "nb15" in lower_name)
+    has_label_cols = any(c.lower() in ("label", "attack_cat") for c in df.columns)
+    # Heuristic: if UNSW-like and missing typical columns, consider it headerless
+    typical_cols = {"proto", "service", "state", "spkts", "dpkts"}
+    has_typical = any(c.lower() in typical_cols for c in df.columns)
+    if unsw_like and (not has_label_cols or not has_typical):
+        unsw_columns = [
+            "id","dur","proto","service","state","spkts","dpkts","sbytes","dbytes","rate","sttl","dttl","sload","dload","sloss","dloss","sinpkt","dinpkt","sjit","djit","swin","stcpb","dtcpb","dwin","tcprtt","synack","ackdat","smean","dmean","trans_depth","response_body_len","ct_srv_src","ct_state_ttl","ct_dst_ltm","ct_src_dport_ltm","ct_dst_sport_ltm","ct_dst_src_ltm","is_ftp_login","ct_ftp_cmd","ct_flw_http_mthd","ct_src_ltm","ct_srv_dst","is_sm_ips_ports","attack_cat","label"
+        ]
+        try:
+            df2 = pd.read_csv(csv_path, header=None, names=unsw_columns, **read_kwargs)
+            if df2.shape[1] == len(unsw_columns):
+                df = df2
+        except Exception:
+            pass
+
+    df.columns = [c.strip() for c in df.columns]
+    return df
+
+
 def find_cicflowmeter_command() -> Optional[List[str]]:
     candidates = [
         ["cicflowmeter"],
@@ -81,8 +145,7 @@ def main():
         csv_path = ensure_flows_csv(input_path, Path(args.features_dir).resolve(), cic_cmd)
 
     # Load flows
-    df = pd.read_csv(csv_path, low_memory=False)
-    df.columns = [c.strip() for c in df.columns]
+    df = read_flows_csv(csv_path)
 
     # Drop irrelevant columns used during training
     for col in dropped_columns:
@@ -94,6 +157,9 @@ def main():
 
     # Replace infinities with NaN
     X = X.replace([np.inf, -np.inf], np.nan)
+
+    # Ensure dtypes consistent with training pipeline expectations
+    # Categorical features will be converted to strings inside pipeline; numeric coerced to floats
 
     # Predict probabilities and classes
     if hasattr(pipeline, "predict_proba"):

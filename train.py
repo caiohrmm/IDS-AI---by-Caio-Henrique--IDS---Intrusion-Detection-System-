@@ -129,13 +129,48 @@ def extract_label_from_filename(path: Path) -> str:
     return "ATTACK"
 
 
-def list_input_files(base_dir: Path) -> List[Path]:
-    """List pcap-like inputs and ready CSVs.
+def normalize_labels_for_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize dataset-specific label columns to a unified 'Label' with BENIGN/MALICIOUS.
 
-    Includes files with extensions: .pcap, .pcapng, .pcap_ISCX
-    Also includes already-extracted CSVs that look like flows from ISCX dataset (e.g., *pcap_ISCX.csv).
+    - For CIC-IDS like CSVs: already have 'Label' (keep as is)
+    - For UNSW-NB15: may have 'attack_cat' and/or 'label' (0/1). Convert to 'Label'.
     """
-    patterns = ["*.pcap", "*.pcapng", "*.pcap_ISCX", "*.pcap_ISCX.csv"]
+    df = df.copy()
+    columns_lower = {c.lower(): c for c in df.columns}
+
+    # If Label already present and non-empty, standardize string values
+    if 'Label' in df.columns:
+        df['Label'] = df['Label'].astype(str).str.strip()
+        return df
+
+    # UNSW: binary label in 'label' where 0 = normal, 1 = attack
+    label_col = columns_lower.get('label')
+    if label_col and df[label_col].dropna().shape[0] > 0:
+        try:
+            yb = pd.to_numeric(df[label_col], errors='coerce').fillna(0).astype(int)
+            df['Label'] = yb.map({0: 'BENIGN', 1: 'MALICIOUS'})
+            return df
+        except Exception:
+            pass
+
+    # UNSW: attack category in 'attack_cat' (NaN or 'Normal' means benign)
+    attack_cat_col = columns_lower.get('attack_cat')
+    if attack_cat_col and attack_cat_col in df.columns:
+        ac = df[attack_cat_col].astype(str).str.strip().str.lower()
+        is_benign = (ac.isna()) | (ac.eq('nan')) | (ac.eq('normal')) | (ac.eq('benign'))
+        df['Label'] = np.where(is_benign, 'BENIGN', 'MALICIOUS')
+        return df
+
+    # Fallback: no label column detected; leave as-is
+    return df
+
+
+def list_input_files(base_dir: Path) -> List[Path]:
+    """List pcap-like inputs and CSVs (including generic CSVs for datasets like UNSW-NB15).
+
+    Includes files with extensions: .pcap, .pcapng, .pcap_ISCX and CSVs (both *pcap_ISCX.csv and generic *.csv).
+    """
+    patterns = ["*.pcap", "*.pcapng", "*.pcap_ISCX", "*.pcap_ISCX.csv", "*.csv"]
     found: List[Path] = []
     for pat in patterns:
         found.extend(base_dir.glob(pat))
@@ -150,9 +185,34 @@ def list_input_files(base_dir: Path) -> List[Path]:
 
 
 def read_flows_csv(csv_path: Path) -> pd.DataFrame:
-    """Read a flows CSV robustly with pandas."""
-    # low_memory=False to avoid mixed type warnings; engine='c' for speed
-    df = pd.read_csv(csv_path, low_memory=False)
+    """Read a flows CSV robustly with pandas.
+
+    - Tries UTF-8 then Latin-1 encodings
+    - Detects headerless UNSW files and assigns official header
+    """
+    read_kwargs = dict(low_memory=False)
+    try:
+        df = pd.read_csv(csv_path, **read_kwargs)
+    except UnicodeDecodeError:
+        df = pd.read_csv(csv_path, encoding="latin1", **read_kwargs)
+
+    # If looks like UNSW and missing label columns, try re-read as headerless with official columns
+    lower_name = csv_path.name.lower()
+    unsw_like = ("unsw" in lower_name and "nb15" in lower_name)
+    has_label_cols = any(c.lower() in ("label", "attack_cat") for c in df.columns)
+    if unsw_like and not has_label_cols:
+        # Official UNSW-NB15 columns
+        unsw_columns = [
+            "id","dur","proto","service","state","spkts","dpkts","sbytes","dbytes","rate","sttl","dttl","sload","dload","sloss","dloss","sinpkt","dinpkt","sjit","djit","swin","stcpb","dtcpb","dwin","tcprtt","synack","ackdat","smean","dmean","trans_depth","response_body_len","ct_srv_src","ct_state_ttl","ct_dst_ltm","ct_src_dport_ltm","ct_dst_sport_ltm","ct_dst_src_ltm","is_ftp_login","ct_ftp_cmd","ct_flw_http_mthd","ct_src_ltm","ct_srv_dst","is_sm_ips_ports","attack_cat","label"
+        ]
+        try:
+            df2 = pd.read_csv(csv_path, header=None, names=unsw_columns, **read_kwargs)
+            # Heuristic: accept only if column count matches
+            if df2.shape[1] == len(unsw_columns):
+                df = df2
+        except Exception:
+            pass
+
     return df
 
 
@@ -182,6 +242,21 @@ def drop_irrelevant_columns(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
         "SimillarHTTP",
         "SimiliarHTTP",
         "Flow Byts/s (raw)",  # occasionally seen
+        # UNSW / common variants
+        "srcip",
+        "dstip",
+        "sport",
+        "dsport",
+        "src_port",
+        "dst_port",
+        "id",
+        "stid",
+        "dtid",
+        "ct_state_ttl",
+        "StartTime",
+        "LastTime",
+        "stime",
+        "ltime",
     ]
     existing_drops = [c for c in drop_candidates if c in df.columns]
     return df.drop(columns=existing_drops, errors="ignore"), existing_drops
@@ -197,14 +272,63 @@ def _replace_inf_with_nan(X):
     return X
 
 
+def _to_string_2d(X):
+    """Convert a 2D array/dataframe to strings, preserving shape.
+
+    Ensures OneHotEncoder gets uniform string dtype, avoiding mixed float/str errors.
+    """
+    if isinstance(X, pd.DataFrame):
+        return X.astype("object").astype(str).fillna("")
+    arr = np.asarray(X, dtype=object)
+    # Convert nan/None to empty string, others to str
+    def conv(v):
+        if v is None:
+            return ""
+        try:
+            if isinstance(v, float) and np.isnan(v):
+                return ""
+        except Exception:
+            pass
+        return str(v)
+    vec = np.vectorize(conv, otypes=[str])
+    return vec(arr)
+
+
+def _to_numeric_2d(X):
+    """Convert a 2D array/dataframe to numeric, coercing errors to NaN."""
+    if isinstance(X, pd.DataFrame):
+        return X.apply(pd.to_numeric, errors="coerce")
+    df = pd.DataFrame(X)
+    df = df.apply(pd.to_numeric, errors="coerce")
+    return df.values
+
+
 def build_pipeline(X: pd.DataFrame) -> Tuple[ImbPipeline, List[str], List[str]]:
     """Build the preprocessing + SMOTE + XGBoost pipeline.
 
     Returns (pipeline, categorical_columns, numeric_columns)
     """
-    # Identify categorical and numeric columns
-    categorical_columns = [c for c in X.columns if X[c].dtype == "object"]
-    numeric_columns = [c for c in X.columns if c not in categorical_columns]
+    # Identify categorical and numeric columns, with robust typing
+    # Heuristic: columns with small number of unique values relative to rows become categorical
+    categorical_columns: List[str] = []
+    numeric_columns: List[str] = []
+    max_categorical_cardinality = 200  # avoid exploding OHE on high-card columns
+    for col in X.columns:
+        series = X[col]
+        # Try numeric coercion first
+        numeric_candidate = pd.to_numeric(series, errors="coerce")
+        num_nans = numeric_candidate.isna().sum()
+        num_total = len(series)
+        num_unique = series.astype(str).nunique(dropna=True)
+        is_mostly_numeric = (num_nans / max(1, num_total)) < 0.5
+        if is_mostly_numeric and num_unique > max_categorical_cardinality:
+            numeric_columns.append(col)
+        else:
+            # Treat as categorical if limited unique values or non-numeric
+            if num_unique <= max_categorical_cardinality and num_unique > 1:
+                categorical_columns.append(col)
+            else:
+                numeric_columns.append(col)
 
     # Replace inf with nan globally; imputers will handle
     X = X.replace([np.inf, -np.inf], np.nan)
@@ -218,6 +342,7 @@ def build_pipeline(X: pd.DataFrame) -> Tuple[ImbPipeline, List[str], List[str]]:
 
     categorical_transformer = SkPipeline(
         steps=[
+            ("to_str", FunctionTransformer(_to_string_2d, validate=False)),
             ("imputer", SimpleImputer(strategy="most_frequent")),
             ("onehot", ohe),
         ]
@@ -225,6 +350,7 @@ def build_pipeline(X: pd.DataFrame) -> Tuple[ImbPipeline, List[str], List[str]]:
     numeric_transformer = SkPipeline(
         steps=[
             ("inf_to_nan", FunctionTransformer(_replace_inf_with_nan, validate=False)),
+            ("to_num", FunctionTransformer(_to_numeric_2d, validate=False)),
             ("imputer", SimpleImputer(strategy="median")),
         ]
     )
@@ -289,6 +415,17 @@ def main():
         default="intrusion_model.joblib",
         help="Caminho de saída do modelo treinado",
     )
+    parser.add_argument(
+        "--no-smote",
+        action="store_true",
+        help="Desabilitar SMOTE (recomendado para datasets muito grandes)",
+    )
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=1000000,
+        help="Número máximo de amostras para treino (amostragem aleatória estratificada). 0 para desabilitar",
+    )
     args = parser.parse_args()
 
     base_dir = Path(args.data_dir).resolve()
@@ -315,6 +452,11 @@ def main():
 
         if path.suffix.lower() == ".csv":
             # Already a CSV (likely *pcap_ISCX.csv)
+            # Skip auxiliary UNSW files
+            lower_name = path.name.lower()
+            if lower_name.endswith("features.csv") or "list_events" in lower_name:
+                print(f"Ignorando auxiliar: {path.name}")
+                continue
             csv_path = path
         else:
             # Need to extract flows using CICFlowMeter
@@ -328,7 +470,9 @@ def main():
         try:
             df = read_flows_csv(csv_path)
             df = clean_columns(df)
-            # Only set Label from filename if CSV has no valid Label column
+            # Normalize dataset-specific columns to 'Label'
+            df = normalize_labels_for_dataset(df)
+            # If still missing, fallback to filename-derived label
             if ("Label" not in df.columns) or (not df["Label"].astype(str).str.strip().any()):
                 df["Label"] = label
             all_dfs.append(df)
@@ -351,11 +495,13 @@ def main():
     if "Label" not in data.columns:
         raise SystemExit("Coluna 'Label' não encontrada após leitura dos CSVs.")
 
-    X = data.drop(columns=["Label"], errors="ignore")
+    # Remove target-like leak columns from features
+    X = data.drop(columns=["Label", "label", "attack_cat", "Attack_cat", "ATTACK_CAT"], errors="ignore")
     y_text = data["Label"].astype(str)
 
-    # Binary target mapping: BENIGN vs MALICIOUS
-    y = np.where(y_text.str.upper().str.contains("BENIGN"), 0, 1)
+    # Binary target mapping: BENIGN vs MALICIOUS (robust)
+    y_upper = y_text.str.upper().str.strip()
+    y = np.where(y_upper.eq("BENIGN") | y_upper.eq("NORMAL") | y_upper.eq("BENIGNO"), 0, 1)
 
     # Validate class presence
     unique_classes = np.unique(y)
@@ -369,11 +515,43 @@ def main():
             "Caso esteja treinando a partir de PCAPs sem rótulo, inclua também dados BENIGN ou CSVs com rótulos."
         )
 
+    # Optional downsampling to control memory (stratified)
+    if args.max_samples and args.max_samples > 0 and len(X) > args.max_samples:
+        print(f"Amostrando {args.max_samples} de {len(X)} exemplos para treino (estratificado)...")
+        # Stratified sampling
+        # Get indices per class
+        rng = np.random.default_rng(42)
+        idx = np.arange(len(X))
+        mask = np.zeros(len(X), dtype=bool)
+        for cls in [0, 1]:
+            cls_idx = idx[y == cls]
+            if cls_idx.size == 0:
+                continue
+            take = min(args.max_samples // 2, cls_idx.size)
+            choose = rng.choice(cls_idx, size=take, replace=False)
+            mask[choose] = True
+        # If still under target due to class imbalance, fill up randomly
+        need = args.max_samples - int(mask.sum())
+        if need > 0:
+            remain = idx[~mask]
+            choose = rng.choice(remain, size=min(need, remain.size), replace=False)
+            mask[choose] = True
+        X = X.loc[mask].reset_index(drop=True)
+        y = y[mask]
+        print(f"Amostrado: {len(X)} linhas")
+
     # Pre-sanitize infinities before building pipeline/splitting
     X = _replace_inf_with_nan(X)
 
     # Build pipeline
     pipeline, cat_cols, num_cols = build_pipeline(X)
+
+    # Optionally disable SMOTE for large datasets
+    if args.no_smote or len(X) > 500_000:
+        print("Desabilitando SMOTE para evitar estouro de memória...")
+        steps = [(name, step) for name, step in pipeline.steps if name != "smote"]
+        from imblearn.pipeline import Pipeline as ImbPipeline
+        pipeline = ImbPipeline(steps=steps)
 
     # Train/test split with stratification
     X_train, X_test, y_train, y_test = train_test_split(
