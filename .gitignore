@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+
+# Node
+node_modules/
+logs/
+*.log
+
+# Project artifacts (large / generated)
+*.joblib
+features/
+uploads/
+
+# Datasets (avoid pushing huge files)
+*.pcap
+*.pcapng
+*.pcap_ISCX
+*pcap_ISCX.csv
+# If you have other dataset CSVs, ignore them explicitly here
+# *.csv
+
+# OS
+.DS_Store
+Thumbs.db 
